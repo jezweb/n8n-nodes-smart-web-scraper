@@ -1,0 +1,22 @@
+{
+	"node": "n8n-nodes-smart-web-scraper.smartWebScraper",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Data & Storage", "Utility"],
+	"resources": {
+		"credentialDocumentation": [
+			{
+				"url": "https://docs.firecrawl.dev/api-reference/authentication"
+			},
+			{
+				"url": "https://jina.ai/reader/"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/jezweb/n8n-nodes-smart-web-scraper"
+			}
+		]
+	},
+	"alias": ["Web Scraper", "Content Extractor", "Article Reader", "Readability", "Firecrawl", "Jina"]
+}
