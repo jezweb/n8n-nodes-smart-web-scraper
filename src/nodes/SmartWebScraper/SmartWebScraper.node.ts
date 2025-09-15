@@ -55,22 +55,17 @@ async function scrapeWithHttp(
 
 	// Configure proxy if enabled
 	let proxyConfig: AxiosProxyConfig | undefined;
-	if (failoverOptions.enableProxy) {
-		try {
-			const proxyCredentials = await this.getCredentials('proxyApi');
-			proxyConfig = {
-				host: proxyCredentials.host as string,
-				port: proxyCredentials.port as number,
-				protocol: proxyCredentials.protocol as string,
+	if (failoverOptions.enableProxy && failoverOptions.proxyHost) {
+		proxyConfig = {
+			host: failoverOptions.proxyHost as string,
+			port: (failoverOptions.proxyPort as number) || 8080,
+			protocol: (failoverOptions.proxyProtocol as string) || 'http',
+		};
+		if (failoverOptions.proxyUsername) {
+			proxyConfig.auth = {
+				username: failoverOptions.proxyUsername as string,
+				password: failoverOptions.proxyPassword as string,
 			};
-			if (proxyCredentials.username) {
-				proxyConfig.auth = {
-					username: proxyCredentials.username as string,
-					password: proxyCredentials.password as string,
-				};
-			}
-		} catch (error) {
-			// Proxy credentials not configured, skip proxy
 		}
 	}
 
@@ -116,22 +111,15 @@ async function scrapeWithJina(
 	url: string,
 	advancedOptions: IDataObject,
 	outputOptions: IDataObject,
+	failoverOptions: IDataObject,
 ): Promise<IDataObject> {
 	const timeout = (advancedOptions.timeout as number) || 30000;
 
-	let jinaHost = 'https://r.jina.ai';
+	let jinaHost = (failoverOptions.jinaApiHost as string) || 'https://r.jina.ai';
 	let headers: IDataObject = {};
 
-	try {
-		const jinaCredentials = await this.getCredentials('jinaApi');
-		if (jinaCredentials.apiHost) {
-			jinaHost = jinaCredentials.apiHost as string;
-		}
-		if (jinaCredentials.apiKey) {
-			headers['Authorization'] = `Bearer ${jinaCredentials.apiKey}`;
-		}
-	} catch (error) {
-		// No Jina credentials, use free tier
+	if (failoverOptions.jinaApiKey) {
+		headers['Authorization'] = `Bearer ${failoverOptions.jinaApiKey}`;
 	}
 
 	const response = await axios.get(`${jinaHost}/${url}`, {
@@ -150,13 +138,22 @@ async function scrapeWithFirecrawl(
 	url: string,
 	advancedOptions: IDataObject,
 	outputOptions: IDataObject,
+	failoverOptions: IDataObject,
 ): Promise<IDataObject> {
-	const firecrawlCredentials = await this.getCredentials('firecrawlApi');
-	const apiHost = (firecrawlCredentials.apiHost as string) || 'https://api.firecrawl.dev';
+	const apiHost = (failoverOptions.firecrawlApiHost as string) || 'https://api.firecrawl.dev';
+	const apiKey = failoverOptions.firecrawlApiKey as string;
+
+	if (!apiKey) {
+		throw new Error('Firecrawl API key is required');
+	}
 
 	const requestOptions: IHttpRequestOptions = {
 		method: 'POST',
 		url: `${apiHost}/v0/scrape`,
+		headers: {
+			'Authorization': `Bearer ${apiKey}`,
+			'Content-Type': 'application/json',
+		},
 		body: {
 			url,
 			formats: [outputOptions.format || 'markdown'],
@@ -166,11 +163,7 @@ async function scrapeWithFirecrawl(
 		timeout: (advancedOptions.timeout as number) || 30000,
 	};
 
-	const response = await this.helpers.httpRequestWithAuthentication.call(
-		this,
-		'firecrawlApi',
-		requestOptions,
-	);
+	const response = await this.helpers.httpRequest.call(this, requestOptions);
 
 	return {
 		content: response.markdown || response.content,
@@ -239,20 +232,7 @@ export class SmartWebScraper implements INodeType {
 		},
 		inputs: [NodeConnectionType.Main],
 		outputs: [NodeConnectionType.Main],
-		credentials: [
-			{
-				name: 'firecrawlApi',
-				required: false,
-			},
-			{
-				name: 'jinaApi',
-				required: false,
-			},
-			{
-				name: 'proxyApi',
-				required: false,
-			},
-		],
+		credentials: [],
 		properties: [
 			{
 				displayName: 'URLs',
@@ -302,6 +282,34 @@ export class SmartWebScraper implements INodeType {
 						description: 'Whether to use Firecrawl API as a failover option',
 					},
 					{
+						displayName: 'Firecrawl API Key',
+						name: 'firecrawlApiKey',
+						type: 'string',
+						typeOptions: {
+							password: true,
+						},
+						default: '',
+						placeholder: 'fc-...',
+						description: 'Your Firecrawl API key',
+						displayOptions: {
+							show: {
+								enableFirecrawl: [true],
+							},
+						},
+					},
+					{
+						displayName: 'Firecrawl API Host',
+						name: 'firecrawlApiHost',
+						type: 'string',
+						default: 'https://api.firecrawl.dev',
+						description: 'The base URL of the Firecrawl API',
+						displayOptions: {
+							show: {
+								enableFirecrawl: [true],
+							},
+						},
+					},
+					{
 						displayName: 'Enable Jina AI',
 						name: 'enableJina',
 						type: 'boolean',
@@ -309,11 +317,117 @@ export class SmartWebScraper implements INodeType {
 						description: 'Whether to use Jina AI Reader as a failover option',
 					},
 					{
+						displayName: 'Jina API Key',
+						name: 'jinaApiKey',
+						type: 'string',
+						typeOptions: {
+							password: true,
+						},
+						default: '',
+						placeholder: 'jina_...',
+						description: 'Your Jina API key (optional, for paid tier)',
+						displayOptions: {
+							show: {
+								enableJina: [true],
+							},
+						},
+					},
+					{
+						displayName: 'Jina API Host',
+						name: 'jinaApiHost',
+						type: 'string',
+						default: 'https://r.jina.ai',
+						description: 'The base URL of the Jina Reader API',
+						displayOptions: {
+							show: {
+								enableJina: [true],
+							},
+						},
+					},
+					{
 						displayName: 'Enable Proxy',
 						name: 'enableProxy',
 						type: 'boolean',
 						default: false,
 						description: 'Whether to use proxy server for requests',
+					},
+					{
+						displayName: 'Proxy Host',
+						name: 'proxyHost',
+						type: 'string',
+						default: '',
+						placeholder: 'proxy.example.com',
+						description: 'Proxy server hostname or IP',
+						displayOptions: {
+							show: {
+								enableProxy: [true],
+							},
+						},
+					},
+					{
+						displayName: 'Proxy Port',
+						name: 'proxyPort',
+						type: 'number',
+						default: 8080,
+						description: 'Proxy server port',
+						displayOptions: {
+							show: {
+								enableProxy: [true],
+							},
+						},
+					},
+					{
+						displayName: 'Proxy Protocol',
+						name: 'proxyProtocol',
+						type: 'options',
+						options: [
+							{
+								name: 'HTTP',
+								value: 'http',
+							},
+							{
+								name: 'HTTPS',
+								value: 'https',
+							},
+							{
+								name: 'SOCKS5',
+								value: 'socks5',
+							},
+						],
+						default: 'http',
+						description: 'Proxy protocol',
+						displayOptions: {
+							show: {
+								enableProxy: [true],
+							},
+						},
+					},
+					{
+						displayName: 'Proxy Username',
+						name: 'proxyUsername',
+						type: 'string',
+						default: '',
+						description: 'Proxy authentication username (optional)',
+						displayOptions: {
+							show: {
+								enableProxy: [true],
+							},
+						},
+					},
+					{
+						displayName: 'Proxy Password',
+						name: 'proxyPassword',
+						type: 'string',
+						typeOptions: {
+							password: true,
+						},
+						default: '',
+						description: 'Proxy authentication password (optional)',
+						displayOptions: {
+							show: {
+								enableProxy: [true],
+							},
+						},
 					},
 				],
 			},
@@ -450,11 +564,11 @@ export class SmartWebScraper implements INodeType {
 									usedMethod = 'HTTP GET with content extraction';
 									break;
 								case 'jina':
-									scrapedData = await scrapeWithJina.call(this, url, advancedOptions, outputOptions);
+									scrapedData = await scrapeWithJina.call(this, url, advancedOptions, outputOptions, failoverOptions);
 									usedMethod = 'Jina AI Reader';
 									break;
 								case 'firecrawl':
-									scrapedData = await scrapeWithFirecrawl.call(this, url, advancedOptions, outputOptions);
+									scrapedData = await scrapeWithFirecrawl.call(this, url, advancedOptions, outputOptions, failoverOptions);
 									usedMethod = 'Firecrawl API';
 									break;
 							}

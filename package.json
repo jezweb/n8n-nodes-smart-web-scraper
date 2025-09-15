@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-smart-web-scraper",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Smart web scraper node for n8n with automatic failover and content extraction",
   "main": "index.js",
   "scripts": {
