@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jezweb/n8n-nodes-smart-web-scraper"
+    "url": "git+https://github.com/jezweb/n8n-nodes-smart-web-scraper.git"
   },
   "files": [
     "dist"
