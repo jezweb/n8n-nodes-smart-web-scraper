@@ -165,9 +165,12 @@ async function scrapeWithFirecrawl(
 
 	const response = await this.helpers.httpRequest.call(this, requestOptions);
 
+	// Firecrawl returns data in a nested structure
+	const data = response.data || response;
+
 	return {
-		content: response.markdown || response.content,
-		metadata: response.metadata || {},
+		content: data.markdown || data.content || data.text || '',
+		metadata: data.metadata || {},
 	};
 }
 
@@ -241,7 +244,10 @@ export class SmartWebScraper implements INodeType {
 				default: '',
 				required: true,
 				placeholder: 'https://example.com/article, https://example.com/page2',
-				description: 'The URL(s) to scrape. Separate multiple URLs with commas.',
+				description: 'The URL(s) to scrape. Separate multiple URLs with commas or new lines.',
+				typeOptions: {
+					rows: 3,
+				},
 			},
 			{
 				displayName: 'Scraping Strategy',
@@ -544,8 +550,21 @@ export class SmartWebScraper implements INodeType {
 				const outputOptions = this.getNodeParameter('outputOptions', i) as IDataObject;
 				const advancedOptions = this.getNodeParameter('advancedOptions', i) as IDataObject;
 
-				// Parse URLs - split by comma and trim whitespace
-				const urls = urlsInput.split(',').map(url => url.trim()).filter(url => url);
+				// Parse URLs - handle both single URL and comma-separated URLs
+				// Also handle newline-separated URLs for better flexibility
+				const urls = urlsInput
+					.split(/[,\n]+/)
+					.map(url => url.trim())
+					.filter(url => url && url.length > 0);
+
+				// If no valid URLs found, throw error
+				if (urls.length === 0) {
+					throw new NodeOperationError(
+						this.getNode(),
+						'No valid URLs provided',
+						{ itemIndex: i }
+					);
+				}
 
 				for (const url of urls) {
 					let scrapedData: IDataObject | null = null;
