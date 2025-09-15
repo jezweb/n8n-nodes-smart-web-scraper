@@ -1,10 +1,10 @@
 {
   "name": "n8n-nodes-smart-web-scraper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Smart web scraper node for n8n with automatic failover and content extraction",
   "main": "index.js",
   "scripts": {
-    "build": "tsc && cp -r src/**/*.json dist/ 2>/dev/null || true && cp -r src/**/*.svg dist/ 2>/dev/null || true",
+    "build": "tsc && cp src/**/*.json dist/ 2>/dev/null || true && cp src/**/*.svg dist/ 2>/dev/null || true",
     "dev": "npm run build && npx n8n",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",

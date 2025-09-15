@@ -243,40 +243,25 @@ export class SmartWebScraper implements INodeType {
 			{
 				name: 'firecrawlApi',
 				required: false,
-				displayOptions: {
-					show: {
-						enableFirecrawl: [true],
-					},
-				},
 			},
 			{
 				name: 'jinaApi',
 				required: false,
-				displayOptions: {
-					show: {
-						enableJina: [true],
-					},
-				},
 			},
 			{
 				name: 'proxyApi',
 				required: false,
-				displayOptions: {
-					show: {
-						enableProxy: [true],
-					},
-				},
 			},
 		],
 		properties: [
 			{
-				displayName: 'URL',
-				name: 'url',
+				displayName: 'URLs',
+				name: 'urls',
 				type: 'string',
 				default: '',
 				required: true,
-				placeholder: 'https://example.com/article',
-				description: 'The URL to scrape',
+				placeholder: 'https://example.com/article, https://example.com/page2',
+				description: 'The URL(s) to scrape. Separate multiple URLs with commas.',
 			},
 			{
 				displayName: 'Scraping Strategy',
@@ -439,64 +424,80 @@ export class SmartWebScraper implements INodeType {
 
 		for (let i = 0; i < items.length; i++) {
 			try {
-				const url = this.getNodeParameter('url', i) as string;
+				const urlsInput = this.getNodeParameter('urls', i) as string;
 				const strategy = this.getNodeParameter('strategy', i) as string;
 				const failoverOptions = this.getNodeParameter('failoverOptions', i) as IDataObject;
 				const outputOptions = this.getNodeParameter('outputOptions', i) as IDataObject;
 				const advancedOptions = this.getNodeParameter('advancedOptions', i) as IDataObject;
 
-				let scrapedData: IDataObject | null = null;
-				let usedMethod = '';
-				const errors: string[] = [];
+				// Parse URLs - split by comma and trim whitespace
+				const urls = urlsInput.split(',').map(url => url.trim()).filter(url => url);
 
-				// Determine scraping order based on strategy
-				const methods = getScrapingOrder(strategy, failoverOptions);
+				for (const url of urls) {
+					let scrapedData: IDataObject | null = null;
+					let usedMethod = '';
+					const errors: string[] = [];
 
-				// Try each method until one succeeds
-				for (const method of methods) {
-					try {
-						switch (method) {
-							case 'http':
-								scrapedData = await scrapeWithHttp.call(this, url, advancedOptions, outputOptions, failoverOptions);
-								usedMethod = 'HTTP GET with content extraction';
+					// Determine scraping order based on strategy
+					const methods = getScrapingOrder(strategy, failoverOptions);
+
+					// Try each method until one succeeds
+					for (const method of methods) {
+						try {
+							switch (method) {
+								case 'http':
+									scrapedData = await scrapeWithHttp.call(this, url, advancedOptions, outputOptions, failoverOptions);
+									usedMethod = 'HTTP GET with content extraction';
+									break;
+								case 'jina':
+									scrapedData = await scrapeWithJina.call(this, url, advancedOptions, outputOptions);
+									usedMethod = 'Jina AI Reader';
+									break;
+								case 'firecrawl':
+									scrapedData = await scrapeWithFirecrawl.call(this, url, advancedOptions, outputOptions);
+									usedMethod = 'Firecrawl API';
+									break;
+							}
+
+							if (scrapedData) {
 								break;
-							case 'jina':
-								scrapedData = await scrapeWithJina.call(this, url, advancedOptions, outputOptions);
-								usedMethod = 'Jina AI Reader';
-								break;
-							case 'firecrawl':
-								scrapedData = await scrapeWithFirecrawl.call(this, url, advancedOptions, outputOptions);
-								usedMethod = 'Firecrawl API';
-								break;
+							}
+						} catch (error) {
+							errors.push(`${method}: ${(error as Error).message}`);
+							continue;
 						}
-
-						if (scrapedData) {
-							break;
-						}
-					} catch (error) {
-						errors.push(`${method}: ${(error as Error).message}`);
-						continue;
 					}
-				}
 
-				if (!scrapedData) {
-					throw new NodeOperationError(
-						this.getNode(),
-						`Failed to scrape URL with all available methods. Errors: ${errors.join('; ')}`,
-						{ itemIndex: i }
+					if (!scrapedData) {
+						if (this.continueOnFail()) {
+							const executionData = this.helpers.constructExecutionMetaData(
+								this.helpers.returnJsonArray({
+									error: `Failed to scrape URL with all available methods. Errors: ${errors.join('; ')}`,
+									url: url
+								}),
+								{ itemData: { item: i } },
+							);
+							returnData.push(...executionData);
+							continue;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to scrape URL ${url} with all available methods. Errors: ${errors.join('; ')}`,
+							{ itemIndex: i }
+						);
+					}
+
+					// Add metadata about the scraping process
+					scrapedData.scrapingMethod = usedMethod;
+					scrapedData.url = url;
+					scrapedData.timestamp = new Date().toISOString();
+
+					const executionData = this.helpers.constructExecutionMetaData(
+						this.helpers.returnJsonArray(scrapedData),
+						{ itemData: { item: i } },
 					);
+					returnData.push(...executionData);
 				}
-
-				// Add metadata about the scraping process
-				scrapedData.scrapingMethod = usedMethod;
-				scrapedData.url = url;
-				scrapedData.timestamp = new Date().toISOString();
-
-				const executionData = this.helpers.constructExecutionMetaData(
-					this.helpers.returnJsonArray(scrapedData),
-					{ itemData: { item: i } },
-				);
-				returnData.push(...executionData);
 			} catch (error) {
 				if (this.continueOnFail()) {
 					const executionData = this.helpers.constructExecutionMetaData(
